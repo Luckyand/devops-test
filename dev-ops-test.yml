@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: devops-test
+  name: devops-test
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: devops-test
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: devops-test
+    spec:
+      hostAliases:
+        - ip: "127.0.0.1"
+          hostnames:
+            - "localhost"
+      containers:
+        - image: xxxx-registry-vpc.ap-southeast-5.cr.aliyuncs.com/xxxx/devops-test:1
+          imagePullPolicy: IfNotPresent
+          name: devops-test
+          ports:
+            - containerPort: 8123
+              name: application
+              protocol: TCP
+          resources:
+            limits:
+              cpu: 250m
+              memory: 256Mi
+            requests:
+              cpu: 125m
+              memory: 128Mi
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      imagePullSecrets:
+        - name: regcred
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: devops-test-svc
+  namespace: monitoring
+spec:
+  ports:
+    - name: http
+      port: 8123
+      protocol: TCP
+      targetPort: 8123
+  selector:
+    app: devops-test
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: devops-test-hpa
+  namespace: monitoring
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: devops-test
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 10
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: devops-test-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+  namespace: monitoring
+spec:
+  rules:
+    - host: devops-test.prometheus-lan.my.id
+      http:
+        paths:
+        - pathType: Prefix
+          path: /
+          backend:
+            service:
+              name: devops-test-svc
+              port:
+                number: 8123
+  tls:
+    - hosts:
+        - devops-test.prometheus-lan.my.id
+      secretName: secret-ssl-wildcard-prometheus-lan
